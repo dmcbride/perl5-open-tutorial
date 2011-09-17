@@ -1,0 +1,125 @@
+=head1 NAME
+
+perlopentut - tutorial on opening files and such in Perl
+
+=head1 DESCRIPTION
+
+Perl has two ways to open things: the shell-style open for convenience, and
+C-style sysopen for precision.
+
+=head1 Shell-style open
+
+Perl's C<open> function is detailed in C<perldoc -f open>; this tutorial
+presents hints, tips, and best practices in an onramp-style tutorial that makes
+it easy to get started.
+
+=head2 Simple opens
+
+To open and read from a file,  you create a filehandle with the C<open>
+function, then read from the filehandle:
+
+    open my $filehandle, '<', 'file_to_read.txt';
+    while (<$filehandle>) {
+        # do whatever you want with $_, which is a single line
+        # from the file
+    }
+    close $filehandle;
+
+Filehandles created in this way are lexically-scoped scalars, just like any
+other reference declared with C<my>. There are several special global
+filehandles as well:
+
+=over 4
+
+=item STDIN - standard input
+
+=item STDOUT - standard output
+
+=item STDERR - standard error
+
+=item DATA - reads from a special C<__DATA__> section at the end of a Perl
+source file.
+
+=back
+
+You can also create this kind of global filehandle if you want, but lexically-
+scoped filehandles are usually suitable.
+
+The C<open> function takes three arguments: a scalar to store a reference to the
+filehandle, a string representing the open mode (and, optionally, the encoding),
+and another string specifying the filename to open:
+
+    open my $fh, '<', '/etc/motd';
+
+This kind of lexical filehandle can be passed between subroutines like any other
+scalar, and is implicitly closed when it falls out of scope (more on that later).
+
+Common open modes are:
+
+    <       read
+    >       write (truncates an existing file if open succeeds, or creates a new file)
+    >>      append (adds to the end of an existing file, or creates a new file for writing)
+    +<      read-write (without truncating the file)
+    +>      read-write (truncate existing file)
+    |-      a pipe to an external program (filename is the command)
+    -|      a pipe from an external program (filename is the command)
+
+As always, practice defensive programming by ensuring that error conditions are
+handled appropriately. File permissions might block a file from being opened,
+the file might not exist, or there might be a filesystem error - all these need
+to be handled appropriately. C<open> returns true on success, and a false value
+on failure. As well, failure will cause the predefined L<variable|perlvar> C<$!>
+to be set with the system error.
+
+    open my $fh, '<', '/etc/motd' or die "Couldn't open /etc/motd for reading: $!";
+
+However, doing this for every open and close of a filehandle is repetitive, and
+therefore error-prone, thereby violating the DRY (Don't Repeat Yourself)
+principle. Instead, you can use the L<autodie> pragma to have Perl automatically
+throw sensible exceptions (probably better than what you'd write yourself) when
+an open fails. The autodie pragma was included with Perl as of 5.10.1, but can
+be installed on older Perls.
+
+    use autodie;
+    open my $in, '<', '/etc/motd'; # throws an exception on failure
+
+If a filehandle was opened previously, it is implicitly closed prior to the new
+C<open> being attempted. Lexical filehandles are also implicitly closed when
+they fall out of scope. This can hide errors under some circumstances. For
+example, an explicit C<close> will fail if the filehandle was already closed.
+Implicitly closing a filehandle can be problematic when you need to check
+whether the close encountered a failure condition, for example, if you opened a
+pipe to another program.
+
+C<close> will return false and put error details in C<$!> just like a failed
+C<open> call. Likewise, autodie will make C<close> throw an exception.
+
+=head2 Specifying file encodings
+
+When dealing with input & output, you must decode incoming data as the B<first>
+thing, and encode outgoing data as the B<last> thing. Perl can often do this
+automatically if you set encoding layers on your filehandles. You can set layers
+on a filehandle after the fact, using the C<binmode> function, or set default
+layers with the C<open> pragma, but the most common way is to specify encoding
+layers in the second parameter of the C<open> call, alongside the open mode.
+
+    use autodie; # to avoid repetitive error-handling code
+    binmode STDIN, ':encoding(cp1252)';
+    open my $out, '> :raw :encoding(UTF-16LE) :crlf', $filename;
+    print $out while <STDIN>;
+    close $out;
+    close STDIN;
+
+See PerlIO for the C<:utf8> layer, PerlIO::encoding for the C<:encoding()>
+layer, and Encode::Supported for many encodings supported by the Encode module.
+
+For UTF-8, you almost certainly want to use the layer C<:encoding('UTF-8')> for
+safety and correctness. See L<perluniintro> for information on Unicode/UTF-8.
+
+=head2 Writing to an in-memory file
+
+You can read from and write to an in-memory "file" that is actually a scalar by
+passing a reference to the scalar as the filename in an C<open> call:
+
+    open my $fh, '>', \$str;
+
